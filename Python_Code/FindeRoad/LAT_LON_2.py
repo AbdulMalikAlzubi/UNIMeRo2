@@ -1,223 +1,239 @@
 import tkinter as tk
 from tkinter import messagebox
 import requests
-import csv
-from datetime import datetime
-from pathlib import Path
+from urllib.parse import quote
+import webbrowser
 
-# ----------------- GEOCODING KONFIGURATION (Nominatim / OSM) -----------------
-# Wir verwenden Nominatim (OpenStreetMap) als Geocoder, kein Token nötig.
-# Bitte den User-Agent ggf. mit Kontaktinfo (E-Mail) ergänzen, um die Nominatim-Richtlinien einzuhalten.
+import show_route2  # unser Modul
+
+# ----------------- MAPBOX KONFIGURATION -----------------
+
+# Deinen echten Mapbox-Token einsetzen:
+MAPBOX_ACCESS_TOKEN = (
+    "pk.eyJ1IjoiYWFsenViaSIsImEiOiJjbWliajF5aGYwM2toMndxemIwYTh4bXNrIn0.riDqdXb-o1KisGpQpXmXbA"
+)
+
 DEFAULT_HEADERS = {
     "User-Agent": "MalikRoadProject/1.0"
 }
 
-
 # ----------------- OSRM KONFIGURATION -----------------
+# Wenn du einen eigenen OSRM-Server hast, HIER eintragen:
+# z.B. "http://localhost:5000" oder deine AWS-/Docker-URL
+OSRM_BASE_URL = "http://router.project-osrm.org"
 
-# Öffentlicher OSRM-Server oder dein eigener:
-# z.B. "https://router.project-osrm.org" oder "http://localhost:5000"
-OSRM_BASE_URL = "https://router.project-osrm.org"
 
+# ============================================================
+# Geocoding-Funktion (Adresse -> lat/lon) über Mapbox
+# ============================================================
+def geocode_address_to_latlon(address: str):
+    encoded_address = quote(address)
 
-# ----------------- GEOCODING (Adresse -> lat/lon) -----------------
+    url = (
+        f"https://api.mapbox.com/geocoding/v5/mapbox.places/"
+        f"{encoded_address}.json"
+        f"?access_token={MAPBOX_ACCESS_TOKEN}&limit=1"
+    )
 
-def geocode(address: str):
-    """
-    Verwendet den Nominatim Geocoding Service (OpenStreetMap),
-    um aus einer Adresse (Straße, Hausnr, PLZ, Ort) lat/lon zu holen.
-    Kein Token nötig, aber bitte keine exzessiven Anfragen senden.
-    """
-    address = address.strip()
-    if not address:
-        raise ValueError("Leere Adresse.")
+    resp = requests.get(url, headers=DEFAULT_HEADERS)
+    resp.raise_for_status()
+    data = resp.json()
 
-    url = "https://nominatim.openstreetmap.org/search"
-    params = {
-        "q": address,
-        "format": "json",
-        "limit": 1
-    }
+    if not data.get("features"):
+        raise ValueError(f"Keine Koordinaten für Adresse gefunden: {address}")
 
-    # Nominatim verlangt einen sinnvollen User-Agent
-    headers = {
-        "User-Agent": DEFAULT_HEADERS.get("User-Agent", "MalikRoadProject/1.0")
-    }
-
-    response = requests.get(url, params=params, headers=headers, timeout=10)
-    response.raise_for_status()
-    data = response.json()
-
-    if not data:
-        raise ValueError("Adresse wurde nicht gefunden (Nominatim/OSM).")
-
-    lat = float(data[0]["lat"])
-    lon = float(data[0]["lon"])
+    lon, lat = data["features"][0]["center"]
     return lat, lon
 
 
-# ----------------- ROUTE (Start/Ziel-lat/lon -> OSRM-Punkte) -----------------
-
-def get_route_coords_osrm(start_lat, start_lon, end_lat, end_lon):
+# ============================================================
+# Routing-Funktion (Start/Ziel-Koordinaten -> Liste von (lat,lon))
+#  → OSRM statt Mapbox Directions
+# ============================================================
+def build_route_coords(start_lat, start_lon, dest_lat, dest_lon):
     """
-    Holt die Fahrstrecke von der OSRM-API (/route)
-    und gibt eine Liste von (lat, lon)-Punkten zurück.
+    Nutzt OSRM Route API.
+    Rückgabe: Liste von (lat, lon).
     """
     url = (
         f"{OSRM_BASE_URL}/route/v1/driving/"
-        f"{start_lon},{start_lat};{end_lon},{end_lat}"
+        f"{start_lon},{start_lat};{dest_lon},{dest_lat}"
+        f"?geometries=geojson&overview=full"
     )
-    params = {
-        "overview": "full",
-        "geometries": "geojson"
-    }
 
-    response = requests.get(url, params=params, timeout=15, headers=DEFAULT_HEADERS)
-    response.raise_for_status()
-    data = response.json()
+    resp = requests.get(url, headers=DEFAULT_HEADERS)
+    resp.raise_for_status()
+    data = resp.json()
 
     if not data.get("routes"):
-        raise RuntimeError("Keine Route gefunden (OSRM).")
+        raise ValueError("Keine Route von OSRM gefunden.")
 
-    coords_lonlat = data["routes"][0]["geometry"]["coordinates"]
-    # OSRM liefert [lon, lat] -> umdrehen auf (lat, lon)
-    coords_latlon = [(lat, lon) for lon, lat in coords_lonlat]
-    return coords_latlon
-
-
-# ----------------- ROUTE IN CSV SPEICHERN -----------------
-
-def save_route_to_csv(coords):
-    """
-    Speichert die Routenpunkte in eine CSV-Datei im gleichen Ordner wie das Skript.
-    """
-    base_dir = Path(__file__).resolve().parent
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = base_dir / f"route_{timestamp}.csv"
-
-    with open(filename, mode="w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["index", "lat", "lon"])
-        for i, (lat, lon) in enumerate(coords):
-            writer.writerow([i, lat, lon])
-
-    return filename
+    coords = data["routes"][0]["geometry"]["coordinates"]  # [ [lon, lat], ... ]
+    route_coords = [(lat, lon) for lon, lat in coords]
+    return route_coords
 
 
-# ----------------- BUTTON-FUNKTIONEN -----------------
+# ============================================================
+# TKINTER GUI
+# ============================================================
+root = tk.Tk()
+root.title("Road Quality – Routenplanung mit Kosten")
 
-def berechne_und_speichere_route():
-    """
-    Wird aufgerufen, wenn der Button 'Route berechnen & speichern' geklickt wird.
-    Liest Start-/Zieladresse, geokodiert sie mit Nominatim (OSM), holt die Route von OSRM
-    und speichert sie als CSV.
-    """
+# ----------------- Zeile 0/1: Start/Ziel -----------------
+tk.Label(root, text="Startadresse:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
+entry_start = tk.Entry(root, width=60)
+entry_start.grid(row=0, column=1, columnspan=2, padx=5, pady=2)
+# Muster-Startadresse
+entry_start.insert(0, "Fritz-Tarnow-Straße 3-1, 60320 Frankfurt am Main")
+
+tk.Label(root, text="Zieladresse:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+entry_dest = tk.Entry(root, width=60)
+entry_dest.grid(row=1, column=1, columnspan=2, padx=5, pady=2)
+# Muster-Zieladresse
+entry_dest.insert(0, "Josephskirchstraße 1, 60433 Frankfurt am Main")
+
+# ----------------- Zeilen 2–6: Preise pro km -----------------
+tk.Label(root, text="Preis pro km (VERY GOOD):").grid(row=2, column=0, sticky="w", padx=5)
+entry_price_vg = tk.Entry(root, width=10)
+entry_price_vg.insert(0, "0.40")
+entry_price_vg.grid(row=2, column=1, sticky="w")
+
+tk.Label(root, text="Preis pro km (GOOD):").grid(row=3, column=0, sticky="w", padx=5)
+entry_price_g = tk.Entry(root, width=10)
+entry_price_g.insert(0, "0.50")
+entry_price_g.grid(row=3, column=1, sticky="w")
+
+tk.Label(root, text="Preis pro km (FAIR):").grid(row=4, column=0, sticky="w", padx=5)
+entry_price_f = tk.Entry(root, width=10)
+entry_price_f.insert(0, "0.70")
+entry_price_f.grid(row=4, column=1, sticky="w")
+
+tk.Label(root, text="Preis pro km (VERY POOR):").grid(row=5, column=0, sticky="w", padx=5)
+entry_price_vp = tk.Entry(root, width=10)
+entry_price_vp.insert(0, "0.90")
+entry_price_vp.grid(row=5, column=1, sticky="w")
+
+tk.Label(root, text="Preis pro km (NOT MEASURED):").grid(row=6, column=0, sticky="w", padx=5)
+entry_price_nm = tk.Entry(root, width=10)
+entry_price_nm.insert(0, "0.30")
+entry_price_nm.grid(row=6, column=1, sticky="w")
+
+# Ergebnis-Label
+label_result = tk.Label(root, text="", fg="blue", justify="left")
+label_result.grid(row=8, column=0, columnspan=3, padx=5, pady=5, sticky="w")
+
+
+# ------------------------------------------------------------
+# Start/Ziel tauschen
+# ------------------------------------------------------------
+def swap_addresses():
+    """Start- und Zieladresse im GUI vertauschen."""
+    start = entry_start.get()
+    dest = entry_dest.get()
+
+    entry_start.delete(0, tk.END)
+    entry_dest.delete(0, tk.END)
+
+    entry_start.insert(0, dest)
+    entry_dest.insert(0, start)
+
+
+# ----------------- Button-Callback -----------------
+def on_calculate_route():
     start_addr = entry_start.get().strip()
-    ziel_addr = entry_ziel.get().strip()
+    dest_addr = entry_dest.get().strip()
 
-    if not start_addr or not ziel_addr:
+    if not start_addr or not dest_addr:
         messagebox.showerror("Fehler", "Bitte Start- und Zieladresse eingeben.")
         return
 
-    # 1) Adressen geocoden (Nominatim / OSM)
+    # Preise lesen
     try:
-        start_lat, start_lon = geocode(start_addr)
-    except Exception as e:
-        messagebox.showerror("Fehler bei der Startadresse", str(e))
+        price_per_km = {
+            "VERY GOOD": float(entry_price_vg.get().replace(",", ".")),
+            "GOOD": float(entry_price_g.get().replace(",", ".")),
+            "FAIR": float(entry_price_f.get().replace(",", ".")),
+            "VERY POOR": float(entry_price_vp.get().replace(",", ".")),
+            "NOT MEASURED": float(entry_price_nm.get().replace(",", ".")),
+        }
+    except ValueError:
+        messagebox.showerror("Fehler", "Bitte gültige Zahlen für die Preise eingeben.")
         return
 
+    # 1) Geocoding
     try:
-        ziel_lat, ziel_lon = geocode(ziel_addr)
+        start_lat, start_lon = geocode_address_to_latlon(start_addr)
+        dest_lat, dest_lon = geocode_address_to_latlon(dest_addr)
     except Exception as e:
-        messagebox.showerror("Fehler bei der Zieladresse", str(e))
+        messagebox.showerror("Geocoding-Fehler", str(e))
         return
 
-    # lat/lon untereinander anzeigen
-    start_lat_var.set(f"Lat: {start_lat:.6f}")
-    start_lon_var.set(f"Lon: {start_lon:.6f}")
-    ziel_lat_var.set(f"Lat: {ziel_lat:.6f}")
-    ziel_lon_var.set(f"Lon: {ziel_lon:.6f}")
-
-    # 2) Route holen – jetzt über OSRM
+    # 2) Route berechnen (OSRM)
     try:
-        coords = get_route_coords_osrm(start_lat, start_lon, ziel_lat, ziel_lon)
+        route_coords = build_route_coords(start_lat, start_lon, dest_lat, dest_lon)
     except Exception as e:
-        messagebox.showerror("Fehler bei der Routenberechnung (OSRM)", str(e))
+        messagebox.showerror("Routing-Fehler", str(e))
         return
 
-    # 3) Route in CSV speichern
-    try:
-        csv_path = save_route_to_csv(coords)
-    except Exception as e:
-        messagebox.showerror("Fehler beim Speichern der Route", str(e))
+    if not route_coords:
+        messagebox.showinfo("Info", "Es wurde keine Route gefunden.")
         return
 
-    info_text = (
-        f"Route berechnet (OSRM).\n"
-        f"Punkte: {len(coords)}\n\n"
-        f"Gespeichert als:\n{csv_path}"
-    )
-    messagebox.showinfo("Fertig", info_text)
+    # 3) Matching + Karte + Kosten + Breakdown
+    try:
+        total_cost, total_dist_km, breakdown = show_route2.show_route_and_cost(
+            route_coords,
+            price_per_km,
+            max_dist_m=15.0,           # Matching-Radius in Metern
+            output_html="route_map.html",
+        )
+    except Exception as e:
+        messagebox.showerror("Fehler bei Kosten/Karte", str(e))
+        return
+
+    # 4) Rechenweg-Text bauen
+    lines = [
+        f"Gesamtdistanz: {total_dist_km:.2f} km",
+        f"Gesamtkosten: {total_cost:.2f} €",
+        "",
+        "Aufschlüsselung nach Straßenzustand:",
+    ]
+
+    # Nach Priorität sortieren (schlechtester Zustand zuerst)
+    for state, info in sorted(
+        breakdown.items(),
+        key=lambda kv: show_route2.STATE_PRIORITY.get(kv[0], 0),
+        reverse=True,
+    ):
+        if info["dist_km"] <= 0:
+            continue
+        lines.append(
+            f"- {state}: {info['dist_km']:.2f} km * "
+            f"{info['price_per_km']:.2f} €/km = {info['cost']:.2f} €"
+        )
+
+    text = "\n".join(lines)
+
+    # Im Label anzeigen (kein Extra-Popup mehr)
+    label_result.config(text=text)
+
+    # Karte im Browser öffnen
+    webbrowser.open("route_map.html")
 
 
-def swap_start_ziel():
-    """
-    Tauscht die Start- und Zieladresse.
-    """
-    s = entry_start.get()
-    z = entry_ziel.get()
-    entry_start.delete(0, tk.END)
-    entry_start.insert(0, z)
-    entry_ziel.delete(0, tk.END)
-    entry_ziel.insert(0, s)
+# ----------------- Buttons -----------------
+btn_swap = tk.Button(
+    root,
+    text="Start/Ziel tauschen",
+    command=swap_addresses,
+)
+btn_swap.grid(row=7, column=0, padx=5, pady=10, sticky="w")
 
-
-# ----------------- TKINTER-GUI -----------------
-
-root = tk.Tk()
-root.title("Fahrtstrecke -> OSRM-Koordinaten + CSV")
-
-frame_input = tk.Frame(root, padx=10, pady=10)
-frame_input.pack(fill="x")
-
-# Startadresse
-tk.Label(frame_input, text="Startadresse:").grid(row=0, column=0, sticky="w")
-entry_start = tk.Entry(frame_input, width=60)
-entry_start.grid(row=1, column=0, sticky="we", pady=(0, 10))
-
-# Beispiel
-entry_start.insert(0, "Fritz-Tarnow-Straße 3-1, 60320 Frankfurt am Main")
-
-# Zieladresse
-tk.Label(frame_input, text="Zieladresse:").grid(row=2, column=0, sticky="w")
-entry_ziel = tk.Entry(frame_input, width=60)
-entry_ziel.grid(row=3, column=0, sticky="we", pady=(0, 10))
-
-entry_ziel.insert(0, "Josephskirchstraße 1, 60433 Frankfurt am Main")
-
-# Buttons
-button_route = tk.Button(root, text="Route berechnen & speichern",
-                         command=berechne_und_speichere_route)
-button_route.pack(pady=5)
-
-button_swap = tk.Button(root, text="Start/Ziel tauschen",
-                        command=swap_start_ziel)
-button_swap.pack(pady=5)
-
-# Ausgabe-Koordinaten
-frame_output = tk.Frame(root, padx=10, pady=10)
-frame_output.pack(fill="x")
-
-tk.Label(frame_output, text="Startkoordinaten:").grid(row=0, column=0, sticky="w")
-start_lat_var = tk.StringVar()
-start_lon_var = tk.StringVar()
-tk.Label(frame_output, textvariable=start_lat_var).grid(row=1, column=0, sticky="w")
-tk.Label(frame_output, textvariable=start_lon_var).grid(row=2, column=0, sticky="w")
-
-tk.Label(frame_output, text="Zielkoordinaten:").grid(row=3, column=0, sticky="w", pady=(10, 0))
-ziel_lat_var = tk.StringVar()
-ziel_lon_var = tk.StringVar()
-tk.Label(frame_output, textvariable=ziel_lat_var).grid(row=4, column=0, sticky="w")
-tk.Label(frame_output, textvariable=ziel_lon_var).grid(row=5, column=0, sticky="w")
+btn_calc = tk.Button(
+    root,
+    text="Route planen & Kosten berechnen",
+    command=on_calculate_route,
+)
+btn_calc.grid(row=7, column=1, columnspan=2, padx=5, pady=10, sticky="e")
 
 root.mainloop()

@@ -2,17 +2,18 @@ import math
 import folium
 import psycopg2
 from psycopg2 import OperationalError
+import os
 
 # ============================================================
 # DB-Konfiguration
 # ============================================================
 DB_CONFIG = {
-    "host": "roadquality-db.ce9gmcmsmoc6.us-east-1.rds.amazonaws.com",
-    "port": 5432,
-    "dbname": "postgres",
-    "user": "UAS",
-    "password": "UAS2025!",
-    "sslmode": "require",
+    "host": os.getenv("DB_HOST", "roadquality-db.ce9gmcmsmoc6.us-east-1.rds.amazonaws.com"),
+    "port": int(os.getenv("DB_PORT", "5432")),
+    "dbname": os.getenv("DB_NAME", "postgres"),
+    "user": os.getenv("DB_USER", "UAS"),
+    "password": os.getenv("DB_PASSWORD", "UAS2025!"),
+    "sslmode": os.getenv("DB_SSLMODE", "require"),
 }
 
 # Koordinatenspalten in track_point (DB)

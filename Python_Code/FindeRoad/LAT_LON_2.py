@@ -21,6 +21,7 @@ DEFAULT_HEADERS = {
 # Wenn du einen eigenen OSRM-Server hast, HIER eintragen:
 # z.B. "http://localhost:5000" oder deine AWS-/Docker-URL
 OSRM_BASE_URL = "http://router.project-osrm.org"
+MAX_MATCH_DISTANCE_M = 15.0  # Matching-Radius in Metern (Punkt→Segment)
 
 
 # ============================================================
@@ -31,10 +32,8 @@ def geocode_address_to_latlon(address: str):
 
     url = (
         f"https://api.mapbox.com/geocoding/v5/mapbox.places/"
-        f"{encoded_address}.json"
-        f"?access_token={MAPBOX_ACCESS_TOKEN}&limit=1"
+        f"{encoded_address}.json?access_token={MAPBOX_ACCESS_TOKEN}&limit=1"
     )
-
     resp = requests.get(url, headers=DEFAULT_HEADERS)
     resp.raise_for_status()
     data = resp.json()
@@ -58,7 +57,7 @@ def build_route_coords(start_lat, start_lon, dest_lat, dest_lon):
     url = (
         f"{OSRM_BASE_URL}/route/v1/driving/"
         f"{start_lon},{start_lat};{dest_lon},{dest_lat}"
-        f"?geometries=geojson&overview=full"
+        "?overview=full&geometries=geojson"
     )
 
     resp = requests.get(url, headers=DEFAULT_HEADERS)
@@ -77,50 +76,55 @@ def build_route_coords(start_lat, start_lon, dest_lat, dest_lon):
 # TKINTER GUI
 # ============================================================
 root = tk.Tk()
-root.title("Road Quality – Routenplanung mit Kosten")
+root.title("Route planen & Kosten berechnen (HTTP + OSRM + Mapbox)")
 
-# ----------------- Zeile 0/1: Start/Ziel -----------------
-tk.Label(root, text="Startadresse:").grid(row=0, column=0, sticky="w", padx=5, pady=2)
-entry_start = tk.Entry(root, width=60)
-entry_start.grid(row=0, column=1, columnspan=2, padx=5, pady=2)
-# Muster-Startadresse
+# ----------------- Eingabefelder -----------------
+frame = tk.Frame(root)
+frame.pack(padx=10, pady=10)
+
+tk.Label(frame, text="Start-Adresse:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+entry_start = tk.Entry(frame, width=50)
+entry_start.grid(row=0, column=1, columnspan=2, padx=5, pady=5)
+
+tk.Label(frame, text="Ziel-Adresse:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+entry_dest = tk.Entry(frame, width=50)
+entry_dest.grid(row=1, column=1, columnspan=2, padx=5, pady=5)
+
+# Beispielwerte
 entry_start.insert(0, "Fritz-Tarnow-Straße 3-1, 60320 Frankfurt am Main")
-
-tk.Label(root, text="Zieladresse:").grid(row=1, column=0, sticky="w", padx=5, pady=2)
-entry_dest = tk.Entry(root, width=60)
-entry_dest.grid(row=1, column=1, columnspan=2, padx=5, pady=2)
-# Muster-Zieladresse
 entry_dest.insert(0, "Josephskirchstraße 1, 60433 Frankfurt am Main")
 
-# ----------------- Zeilen 2–6: Preise pro km -----------------
-tk.Label(root, text="Preis pro km (VERY GOOD):").grid(row=2, column=0, sticky="w", padx=5)
-entry_price_vg = tk.Entry(root, width=10)
+
+# Preise für Straßenzustände
+tk.Label(frame, text="Preis pro km (VERY GOOD):").grid(row=2, column=0, sticky="w", padx=5)
+entry_price_vg = tk.Entry(frame, width=10)
 entry_price_vg.insert(0, "0.40")
 entry_price_vg.grid(row=2, column=1, sticky="w")
 
-tk.Label(root, text="Preis pro km (GOOD):").grid(row=3, column=0, sticky="w", padx=5)
-entry_price_g = tk.Entry(root, width=10)
+tk.Label(frame, text="Preis pro km (GOOD):").grid(row=3, column=0, sticky="w", padx=5)
+entry_price_g = tk.Entry(frame, width=10)
 entry_price_g.insert(0, "0.50")
 entry_price_g.grid(row=3, column=1, sticky="w")
 
-tk.Label(root, text="Preis pro km (FAIR):").grid(row=4, column=0, sticky="w", padx=5)
-entry_price_f = tk.Entry(root, width=10)
+tk.Label(frame, text="Preis pro km (FAIR):").grid(row=4, column=0, sticky="w", padx=5)
+entry_price_f = tk.Entry(frame, width=10)
 entry_price_f.insert(0, "0.70")
 entry_price_f.grid(row=4, column=1, sticky="w")
 
-tk.Label(root, text="Preis pro km (VERY POOR):").grid(row=5, column=0, sticky="w", padx=5)
-entry_price_vp = tk.Entry(root, width=10)
+tk.Label(frame, text="Preis pro km (VERY POOR):").grid(row=5, column=0, sticky="w", padx=5)
+entry_price_vp = tk.Entry(frame, width=10)
 entry_price_vp.insert(0, "0.90")
 entry_price_vp.grid(row=5, column=1, sticky="w")
 
-tk.Label(root, text="Preis pro km (NOT MEASURED):").grid(row=6, column=0, sticky="w", padx=5)
-entry_price_nm = tk.Entry(root, width=10)
+tk.Label(frame, text="Preis pro km (NOT MEASURED):").grid(row=6, column=0, sticky="w", padx=5)
+entry_price_nm = tk.Entry(frame, width=10)
 entry_price_nm.insert(0, "0.30")
 entry_price_nm.grid(row=6, column=1, sticky="w")
 
-# Ergebnis-Label
-label_result = tk.Label(root, text="", fg="blue", justify="left")
-label_result.grid(row=8, column=0, columnspan=3, padx=5, pady=5, sticky="w")
+
+# Label für Ergebnis
+label_result = tk.Label(root, text="", justify="left", anchor="w")
+label_result.pack(padx=10, pady=10, fill="both")
 
 
 # ------------------------------------------------------------
@@ -184,7 +188,7 @@ def on_calculate_route():
         total_cost, total_dist_km, breakdown = show_route2.show_route_and_cost(
             route_coords,
             price_per_km,
-            max_dist_m=15.0,           # Matching-Radius in Metern
+            max_dist_m=MAX_MATCH_DISTANCE_M,           # Matching-Radius in Metern
             output_html="route_map.html",
         )
     except Exception as e:
@@ -199,12 +203,7 @@ def on_calculate_route():
         "Aufschlüsselung nach Straßenzustand:",
     ]
 
-    # Nach Priorität sortieren (schlechtester Zustand zuerst)
-    for state, info in sorted(
-        breakdown.items(),
-        key=lambda kv: show_route2.STATE_PRIORITY.get(kv[0], 0),
-        reverse=True,
-    ):
+    for state, info in breakdown.items():
         if info["dist_km"] <= 0:
             continue
         lines.append(
@@ -227,13 +226,13 @@ btn_swap = tk.Button(
     text="Start/Ziel tauschen",
     command=swap_addresses,
 )
-btn_swap.grid(row=7, column=0, padx=5, pady=10, sticky="w")
+btn_swap.pack(padx=5, pady=5)
 
 btn_calc = tk.Button(
     root,
     text="Route planen & Kosten berechnen",
     command=on_calculate_route,
 )
-btn_calc.grid(row=7, column=1, columnspan=2, padx=5, pady=10, sticky="e")
+btn_calc.pack(padx=5, pady=10)
 
 root.mainloop()

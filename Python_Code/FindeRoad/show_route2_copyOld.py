@@ -1,14 +1,22 @@
 import math
 import folium
+import psycopg2
+from psycopg2 import OperationalError
 import os
-import requests  # NEU: HTTP für JSON
 
 # ============================================================
-# HTTP-API-Konfiguration
+# DB-Konfiguration
 # ============================================================
-API_BASE_URL = os.getenv("API_BASE_URL", "http://100.25.221.124:8000")
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST", "roadquality-db.ce9gmcmsmoc6.us-east-1.rds.amazonaws.com"),
+    "port": int(os.getenv("DB_PORT", "5432")),
+    "dbname": os.getenv("DB_NAME", "postgres"),
+    "user": os.getenv("DB_USER", "UAS"),
+    "password": os.getenv("DB_PASSWORD", "UAS2025!"),
+    "sslmode": os.getenv("DB_SSLMODE", "require"),
+}
 
-# Koordinatenspalten in track_point (nur noch zur Info)
+# Koordinatenspalten in track_point (DB)
 LAT_COLUMN = "lat_matched"
 LON_COLUMN = "lon_matched"
 
@@ -32,45 +40,44 @@ STATE_PRIORITY = {
 
 
 # ============================================================
-# Punkte über HTTP-JSON laden
+# DB-Punkte laden
 # ============================================================
 def load_db_points():
     """
-    Holt alle Punkte aus der HTTP-API und gibt eine Liste von Dicts zurück:
-    [
-      {"lat": 50.1, "lon": 8.6, "state": "VERY GOOD"},
-      ...
-    ]
+    Holt alle (lat, lon, roughness) aus track_point
+    und gibt eine Liste von Dicts zurück.
     """
-    url = f"{API_BASE_URL}/db_points"
     try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-    except requests.RequestException as e:
+        conn = psycopg2.connect(**DB_CONFIG)
+    except OperationalError as e:
         raise RuntimeError(
-            f"Konnte nicht auf die HTTP-API zugreifen: {url}\nFehler: {e}"
+            "Konnte nicht auf die Datenbank zugreifen. "
+            "Bitte Verbindung/DB-Konfiguration prüfen."
         ) from e
 
-    raw = resp.json()
+    cur = conn.cursor()
 
-    # Sicherheitshalber normalisieren / validieren
+    sql = f"""
+        SELECT {LAT_COLUMN}, {LON_COLUMN}, roughness
+        FROM track_point
+        WHERE {LAT_COLUMN} IS NOT NULL
+          AND {LON_COLUMN} IS NOT NULL
+          AND roughness IS NOT NULL;
+    """
+    cur.execute(sql)
+
     db_points = []
-    for p in raw:
-        try:
-            lat = float(p["lat"])
-            lon = float(p["lon"])
-            state = str(p.get("state", "NOT MEASURED")).upper()
-        except (KeyError, TypeError, ValueError):
-            # Wenn irgendwas komisch ist, diesen Punkt überspringen
-            continue
-
+    for lat, lon, roughness in cur.fetchall():
         db_points.append(
             {
-                "lat": lat,
-                "lon": lon,
-                "state": state,
+                "lat": float(lat),
+                "lon": float(lon),
+                "state": str(roughness).upper(),   # z.B. "VERY GOOD"
             }
         )
+
+    cur.close()
+    conn.close()
 
     return db_points
 
@@ -189,7 +196,7 @@ def show_route_and_cost(route_coords, price_per_km, max_dist_m=0.0,
     if not route_coords:
         raise ValueError("Keine Route übergeben.")
 
-    # DB-Punkte (RoadLab/OSRM) über HTTP laden
+    # DB-Punkte (RoadLab/OSRM) laden
     db_points = load_db_points()
     if not db_points:
         # keine DB-Daten -> trotzdem Distanz berechnen, aber alles NOT MEASURED
@@ -322,7 +329,7 @@ if __name__ == "__main__":
         "NOT MEASURED": 0.30,
     }
 
-    cost, dist, breakdown = show_route_and_cost(dummy_route, dummy_prices, max_dist_m=0.0)
+    cost, dist, breakdown = show_route_and_cost(dummy_route, dummy_prices, max_dist_m=2.0)
     print(f"Test: Distanz = {dist:.2f} km, Kosten = {cost:.2f} €")
     print("Aufschlüsselung:")
     for state, info in breakdown.items():

@@ -1,7 +1,7 @@
 import math
 import folium
 import os
-import requests  # NEU: HTTP für JSON
+import requests  # HTTP für JSON
 
 # ============================================================
 # HTTP-API-Konfiguration
@@ -57,9 +57,13 @@ def load_db_points():
     db_points = []
     for p in raw:
         try:
-            lat = float(p["lat"])
-            lon = float(p["lon"])
-            state = str(p.get("state", "NOT MEASURED")).upper()
+            # Je nach API: lat/lon oder lat_matched/lon_matched
+            lat = float(p.get("lat") or p.get("lat_matched"))
+            lon = float(p.get("lon") or p.get("lon_matched"))
+
+            # Zustand aus 'state' ODER 'roughness' holen
+            state_raw = p.get("state") or p.get("roughness") or "NOT MEASURED"
+            state = str(state_raw).upper()
         except (KeyError, TypeError, ValueError):
             # Wenn irgendwas komisch ist, diesen Punkt überspringen
             continue

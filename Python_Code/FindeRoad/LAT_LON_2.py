@@ -21,7 +21,7 @@ DEFAULT_HEADERS = {
 # Wenn du einen eigenen OSRM-Server hast, HIER eintragen:
 # z.B. "http://localhost:5000" oder deine AWS-/Docker-URL
 OSRM_BASE_URL = "http://router.project-osrm.org"
-MAX_MATCH_DISTANCE_M = 15.0  # Matching-Radius in Metern (Punkt→Segment)
+MAX_MATCH_DISTANCE_M = 50.0  # Matching-Radius in Metern (Punkt→Segment)
 
 
 # ============================================================

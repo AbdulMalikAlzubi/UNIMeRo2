@@ -1,0 +1,167 @@
+[
+  {
+    "lat": 50.135809,
+    "lon": 8.671584,
+    "roughness": "GOOD"
+  },
+  {
+    "lat": 50.136289,
+    "lon": 8.671487,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.136683,
+    "lon": 8.671385,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.137037,
+    "lon": 8.671224,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.137233,
+    "lon": 8.671126,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.137631,
+    "lon": 8.670942,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.137906,
+    "lon": 8.670793,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.138077,
+    "lon": 8.670695,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.138251,
+    "lon": 8.670609,
+    "roughness": "GOOD"
+  },
+  {
+    "lat": 50.138547,
+    "lon": 8.67053,
+    "roughness": "GOOD"
+  },
+  {
+    "lat": 50.138866,
+    "lon": 8.670493,
+    "roughness": "GOOD"
+  },
+  {
+    "lat": 50.139245,
+    "lon": 8.670406,
+    "roughness": "GOOD"
+  },
+  {
+    "lat": 50.13969,
+    "lon": 8.670198,
+    "roughness": "GOOD"
+  },
+  {
+    "lat": 50.140264,
+    "lon": 8.669873,
+    "roughness": "VERY GOOD"
+  },
+  {
+    "lat": 50.140883,
+    "lon": 8.669524,
+    "roughness": "VERY GOOD"
+  },
+  {
+    "lat": 50.14142,
+    "lon": 8.669236,
+    "roughness": "VERY GOOD"
+  },
+  {
+    "lat": 50.141813,
+    "lon": 8.669048,
+    "roughness": "FAIR"
+  },
+  {
+    "lat": 50.142174,
+    "lon": 8.668924,
+    "roughness": "FAIR"
+  },
+  {
+    "lat": 50.142667,
+    "lon": 8.668886,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.143042,
+    "lon": 8.668865,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.143223,
+    "lon": 8.66884,
+    "roughness": "GOOD"
+  },
+  {
+    "lat": 50.143413,
+    "lon": 8.668804,
+    "roughness": "GOOD"
+  },
+  {
+    "lat": 50.14382,
+    "lon": 8.66867,
+    "roughness": "FAIR"
+  },
+  {
+    "lat": 50.144189,
+    "lon": 8.66849,
+    "roughness": "FAIR"
+  },
+  {
+    "lat": 50.144788,
+    "lon": 8.668257,
+    "roughness": "VERY GOOD"
+  },
+  {
+    "lat": 50.145386,
+    "lon": 8.667946,
+    "roughness": "VERY GOOD"
+  },
+  {
+    "lat": 50.145968,
+    "lon": 8.667677,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.146525,
+    "lon": 8.667424,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.14704,
+    "lon": 8.667173,
+    "roughness": "NOT MEASURED"
+  },
+  {
+    "lat": 50.147363,
+    "lon": 8.66696,
+    "roughness": "VERY POOR"
+  },
+  {
+    "lat": 50.147551,
+    "lon": 8.666831,
+    "roughness": "VERY POOR"
+  },
+  {
+    "lat": 50.147894,
+    "lon": 8.66653,
+    "roughness": "VERY POOR"
+  },
+  {
+    "lat": 50.148289,
+    "lon": 8.666098,
+    "roughness": "VERY POOR"
+  }
+]
